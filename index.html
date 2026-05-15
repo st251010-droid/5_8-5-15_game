@@ -95,6 +95,7 @@
         /* ボード全体 */
         .board-container {
             position: relative;
+            box-sizing: content-box; /* 枠の内側を盤面サイズに合わせて、一番下までピッタリ収める */
             width: var(--board-width);
             height: var(--board-height);
             background: rgba(255, 255, 255, 0.6);
@@ -122,9 +123,10 @@
         /* ぷよ（スライム）のデザイン */
         .puyo {
             position: absolute;
+            top: 0;
+            left: 0;
             width: var(--cell-size);
             height: var(--cell-size);
-            border-radius: 50%;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -159,11 +161,23 @@
             transform: rotate(-25deg);
         }
 
-        /* カラーバリエーション */
-        .color-1 { background-color: #ff7eb3; } /* ピンク */
-        .color-2 { background-color: #7ec8ff; } /* 水色 */
-        .color-3 { background-color: #88f7a6; } /* 緑 */
-        .color-4 { background-color: #fff07e; } /* 黄色 */
+        /* カラーバリエーションと形 */
+        .color-1 { 
+            background-color: #ff7eb3; /* ピンク */
+            border-radius: 50%; /* まん丸 */
+        } 
+        .color-2 { 
+            background-color: #7ec8ff; /* 水色 */
+            border-radius: 25%; /* 角丸四角 */
+        } 
+        .color-3 { 
+            background-color: #88f7a6; /* 緑 */
+            border-radius: 50% 50% 20% 50%; /* しずく型 */
+        } 
+        .color-4 { 
+            background-color: #fff07e; /* 黄色 */
+            border-radius: 40% 60% 60% 40%; /* 少しつぶれた丸 */
+        } 
 
         /* ゴースト（落下予測位置） */
         .puyo.ghost {
@@ -310,6 +324,8 @@
                 <h2>つぎ</h2>
                 <div class="next-preview" id="next-box"></div>
             </div>
+            <!-- ポーズボタンを追加 -->
+            <button class="btn" id="btn-pause" style="font-size: 0.9rem; padding: 8px 0;">ポーズ</button>
         </div>
 
         <div class="board-container" id="board">
@@ -336,15 +352,17 @@
         <button class="btn btn-large" style="grid-column: span 4;" id="btn-drop">一気に落とす</button>
     </div>
 
-    <!-- スタート / ゲームオーバー 画面 -->
+    <!-- スタート / ゲームオーバー / ポーズ 画面 -->
     <div class="modal-overlay" id="modal">
         <div class="modal">
             <h2 id="modal-title">ぷよぱずる</h2>
-            <p style="color: #666; margin-bottom: 15px; font-size: 0.9rem;">
+            <p id="modal-desc" style="color: #666; margin-bottom: 15px; font-size: 0.9rem;">
                 同じ色を4つ以上つなげて消そう！<br>
-                PC: 矢印キーで移動、上で回転
+                PC: 矢印キーで移動、上で回転<br>
+                (Pキーでポーズ)
             </p>
             <button class="start-btn" id="start-btn">スタート♪</button>
+            <button class="start-btn hidden" id="resume-btn">再開する</button>
         </div>
     </div>
 
@@ -360,6 +378,7 @@
         let board = Array.from({ length: ROWS }, () => Array(COLS).fill(0)); // 0:空, 1-4:色
         let score = 0;
         let gameActive = false;
+        let isPaused = false;
         let isAnimating = false;
         let dropInterval;
         let fallSpeed = 800; // 初期スピード
@@ -375,6 +394,9 @@
         const domNext = document.getElementById('next-box');
         const modal = document.getElementById('modal');
         const modalTitle = document.getElementById('modal-title');
+        const modalDesc = document.getElementById('modal-desc');
+        const btnStart = document.getElementById('start-btn');
+        const btnResume = document.getElementById('resume-btn');
 
         // アクティブな要素
         const elMain = document.getElementById('puyo-main');
@@ -400,10 +422,6 @@
             return Math.floor(Math.random() * COLORS) + 1;
         }
 
-        function createPuyoHTML(color) {
-            return `<div class="puyo color-${color}"><div class="puyo-highlight"></div></div>`;
-        }
-
         // === レンダリング ===
         // 現在のボード状態をすべて描画し直す（アニメーション終了後用）
         function renderBoard() {
@@ -414,7 +432,7 @@
                         const p = document.createElement('div');
                         p.className = `puyo color-${board[y][x]}`;
                         p.id = `cell-${x}-${y}`;
-                        p.style.transform = `translate(${x * CELL_SIZE}px, ${y * CELL_SIZE}px)`;
+                        p.style.transform = `translate(calc(var(--cell-size) * ${x}), calc(var(--cell-size) * ${y}))`;
                         p.innerHTML = '<div class="puyo-highlight"></div>';
                         domStatic.appendChild(p);
                     }
@@ -432,21 +450,21 @@
 
             elMain.classList.remove('hidden');
             elMain.className = `puyo color-${currentPiece.mainColor}`;
-            elMain.style.transform = `translate(${currentPiece.x * CELL_SIZE}px, ${currentPiece.y * CELL_SIZE}px)`;
+            elMain.style.transform = `translate(calc(var(--cell-size) * ${currentPiece.x}), calc(var(--cell-size) * ${currentPiece.y}))`;
 
             elSub.classList.remove('hidden');
             elSub.className = `puyo color-${currentPiece.subColor}`;
-            elSub.style.transform = `translate(${currentPiece.subX * CELL_SIZE}px, ${currentPiece.subY * CELL_SIZE}px)`;
+            elSub.style.transform = `translate(calc(var(--cell-size) * ${currentPiece.subX}), calc(var(--cell-size) * ${currentPiece.subY}))`;
 
             // ゴーストの計算
             const ghost = calculateGhost();
             elGhostMain.classList.remove('hidden');
             elGhostMain.className = `puyo ghost color-${currentPiece.mainColor}`;
-            elGhostMain.style.transform = `translate(${ghost.x * CELL_SIZE}px, ${ghost.y * CELL_SIZE}px)`;
+            elGhostMain.style.transform = `translate(calc(var(--cell-size) * ${ghost.x}), calc(var(--cell-size) * ${ghost.y}))`;
 
             elGhostSub.classList.remove('hidden');
             elGhostSub.className = `puyo ghost color-${currentPiece.subColor}`;
-            elGhostSub.style.transform = `translate(${ghost.subX * CELL_SIZE}px, ${ghost.subY * CELL_SIZE}px)`;
+            elGhostSub.style.transform = `translate(calc(var(--cell-size) * ${ghost.subX}), calc(var(--cell-size) * ${ghost.subY}))`;
         }
 
         // ゴーストの落下位置を計算
@@ -469,12 +487,12 @@
             if (nextPiece) {
                 const s = document.createElement('div');
                 s.className = `puyo color-${nextPiece.subColor}`;
-                s.style.transform = `translate(0px, -15px)`;
+                s.style.transform = `translate(0px, calc(var(--cell-size) * -0.5))`;
                 s.innerHTML = '<div class="puyo-highlight"></div>';
                 
                 const m = document.createElement('div');
                 m.className = `puyo color-${nextPiece.mainColor}`;
-                m.style.transform = `translate(0px, 15px)`;
+                m.style.transform = `translate(0px, calc(var(--cell-size) * 0.5))`;
                 m.innerHTML = '<div class="puyo-highlight"></div>';
                 
                 domNext.appendChild(s);
@@ -488,12 +506,20 @@
             score = 0;
             domScore.innerText = score;
             gameActive = true;
+            isPaused = false;
             isAnimating = false;
             fallSpeed = 800;
             
             nextPiece = { mainColor: getRandomColor(), subColor: getRandomColor() };
             renderBoard();
             spawnPiece();
+            
+            // モーダルの状態を初期化
+            modalTitle.innerText = "ぷよぱずる";
+            modalDesc.classList.remove('hidden');
+            btnStart.classList.remove('hidden');
+            btnResume.classList.add('hidden');
+            btnStart.innerText = "スタート♪";
             
             modal.classList.add('hidden');
             if (dropInterval) clearInterval(dropInterval);
@@ -504,7 +530,32 @@
             gameActive = false;
             clearInterval(dropInterval);
             modalTitle.innerText = "ゲームオーバー";
+            modalDesc.classList.add('hidden');
+            btnStart.innerText = "もういちど♪";
+            btnStart.classList.remove('hidden');
+            btnResume.classList.add('hidden');
             modal.classList.remove('hidden');
+        }
+
+        function togglePause() {
+            // ゲーム中・アニメーション中でない時は無効
+            if (!gameActive || isAnimating) return;
+
+            isPaused = !isPaused;
+
+            if (isPaused) {
+                // ポーズにする処理
+                clearInterval(dropInterval);
+                modalTitle.innerText = "ポーズ中";
+                modalDesc.classList.add('hidden');
+                btnStart.classList.add('hidden');
+                btnResume.classList.remove('hidden');
+                modal.classList.remove('hidden');
+            } else {
+                // 再開する処理
+                modal.classList.add('hidden');
+                dropInterval = setInterval(autoDrop, fallSpeed);
+            }
         }
 
         function spawnPiece() {
@@ -537,7 +588,7 @@
         }
 
         function move(dx, dy) {
-            if (!gameActive || isAnimating || !currentPiece) return false;
+            if (!gameActive || isAnimating || isPaused || !currentPiece) return false;
             
             if (isValidPos(currentPiece.x + dx, currentPiece.y + dy) && 
                 isValidPos(currentPiece.subX + dx, currentPiece.subY + dy)) {
@@ -553,7 +604,7 @@
         }
 
         function rotate() {
-            if (!gameActive || isAnimating || !currentPiece) return;
+            if (!gameActive || isAnimating || isPaused || !currentPiece) return;
 
             const nextRot = (currentPiece.rot + 1) % 4;
             let nx = currentPiece.x, ny = currentPiece.y;
@@ -580,7 +631,7 @@
         }
 
         function hardDrop() {
-            if (!gameActive || isAnimating || !currentPiece) return;
+            if (!gameActive || isAnimating || isPaused || !currentPiece) return;
             const ghost = calculateGhost();
             currentPiece.x = ghost.x;
             currentPiece.y = ghost.y;
@@ -591,7 +642,7 @@
         }
 
         function autoDrop() {
-            if (!gameActive || isAnimating) return;
+            if (!gameActive || isAnimating || isPaused) return;
             if (!move(0, 1)) {
                 lockPiece();
             }
@@ -729,6 +780,11 @@
         // === イベントリスナー ===
         // キーボード
         document.addEventListener('keydown', e => {
+            if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
+                togglePause();
+            }
+            if (isPaused) return; // ポーズ中は以下の操作を無効化
+
             if (e.key === 'ArrowLeft') move(-1, 0);
             if (e.key === 'ArrowRight') move(1, 0);
             if (e.key === 'ArrowDown') move(0, 1);
@@ -748,8 +804,10 @@
         attachBtn('btn-down', () => move(0, 1));
         attachBtn('btn-rotate', rotate);
         attachBtn('btn-drop', hardDrop);
+        attachBtn('btn-pause', togglePause);
 
-        document.getElementById('start-btn').addEventListener('click', startGame);
+        btnStart.addEventListener('click', startGame);
+        btnResume.addEventListener('click', togglePause);
 
     </script>
 </body>
